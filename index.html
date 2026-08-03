@@ -22,8 +22,9 @@
   html,body{
     width:100%; height:100%; overflow:hidden; background:var(--bg-void);
     font-family:'Share Tech Mono', monospace; color:var(--text);
+    touch-action:none; -webkit-user-select:none; user-select:none;
   }
-  #game-canvas{position:fixed; inset:0; display:block; outline:none;}
+  #game-canvas{position:fixed; inset:0; display:block; outline:none; touch-action:none;}
 
   .hud-font{font-family:'Orbitron', sans-serif;}
 
@@ -105,6 +106,26 @@
   #toast.show{opacity:1; transform:translateX(-50%) translateY(6px);}
   #toast.danger{border-color:var(--danger); color:#ffd6da;}
   #toast.success{border-color:var(--success); color:#d4ffe9;}
+
+  /* ---------- touch controls ---------- */
+  #touch-joystick{
+    position:fixed; width:112px; height:112px; margin:-56px 0 0 -56px; border-radius:50%;
+    border:2px solid rgba(79,224,255,0.35); background:rgba(79,224,255,0.05);
+    display:none; z-index:25; pointer-events:none; touch-action:none;
+  }
+  #touch-joystick-knob{
+    position:absolute; top:50%; left:50%; width:46px; height:46px; margin:-23px 0 0 -23px;
+    border-radius:50%; background:rgba(79,224,255,0.32); border:1px solid rgba(79,224,255,0.75);
+    box-shadow:0 0 12px rgba(79,224,255,0.5);
+  }
+  #prompt.touchable{pointer-events:auto; cursor:pointer;}
+  #view-toggle-btn{
+    position:fixed; top:112px; left:20px; z-index:26; display:none;
+    font-family:'Orbitron',sans-serif; font-size:11px; letter-spacing:1px; color:var(--cyan);
+    background:rgba(10,16,22,0.78); border:1px solid var(--cyan-dim); padding:9px 14px;
+    touch-action:none; cursor:pointer;
+  }
+  #view-toggle-btn:active{background:rgba(79,224,255,0.18);}
 
   /* ---------- keypad modal ---------- */
   #keypad-modal{
@@ -191,6 +212,8 @@
 <div id="prompt"></div>
 <div id="mode-hint">1인칭 시점 · V 키로 전환</div>
 <div id="toast"></div>
+<button id="view-toggle-btn">3인칭</button>
+<div id="touch-joystick"><div id="touch-joystick-knob"></div></div>
 
 <!-- Keypad modal -->
 <div id="keypad-modal">
@@ -283,6 +306,8 @@ const game = {
 };
 
 const player = { x:0, y:0, z:6.5, radius:0.45 };
+
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
 const obstacles = []; // {x,z,r}
 
@@ -563,14 +588,95 @@ const interactables = [...switchMeshes, ...crateMeshes, terminal, launchConsole]
 /* ============================================================
    INPUT
 ============================================================ */
+function toggleThirdPerson(){
+  game.thirdPerson = !game.thirdPerson;
+  playerMesh.visible = game.thirdPerson;
+  document.getElementById('mode-hint').textContent = game.thirdPerson ? '3인칭 시점 · V 키로 전환' : '1인칭 시점 · V 키로 전환';
+  const viewBtn = document.getElementById('view-toggle-btn');
+  if(viewBtn) viewBtn.textContent = game.thirdPerson ? '1인칭' : '3인칭';
+}
+
 const keys = {};
 window.addEventListener('keydown', (e)=>{
   keys[e.code] = true;
   if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)) e.preventDefault();
   if(e.code === 'KeyE') tryInteract();
-  if(e.code === 'KeyV') { game.thirdPerson = !game.thirdPerson; playerMesh.visible = game.thirdPerson; document.getElementById('mode-hint').textContent = game.thirdPerson ? '3인칭 시점 · V 키로 전환' : '1인칭 시점 · V 키로 전환'; }
+  if(e.code === 'KeyV') toggleThirdPerson();
 });
 window.addEventListener('keyup', (e)=>{ keys[e.code] = false; });
+
+/* ---------- touch controls: left = move, right = look ---------- */
+const touchLook = { id:null, lastX:0, lastY:0 };
+const touchMove = { id:null, active:false, baseX:0, baseY:0, vecX:0, vecY:0, mag:0 };
+const touchSensitivity = 0.0032;
+const JOY_RADIUS = 56;
+const joystickEl = document.getElementById('touch-joystick');
+const joystickKnob = document.getElementById('touch-joystick-knob');
+
+function showJoystick(x,y){
+  joystickEl.style.left = x+'px';
+  joystickEl.style.top = y+'px';
+  joystickEl.style.display = 'block';
+  joystickKnob.style.transform = 'translate(0px,0px)';
+}
+function hideJoystick(){ joystickEl.style.display = 'none'; }
+
+function isUiTarget(el){
+  return el.closest && (el.closest('#prompt') || el.closest('.overlay') || el.closest('#keypad-modal') || el.closest('#hud') || el.closest('#view-toggle-btn'));
+}
+
+function onTouchPointerDown(e){
+  if(!isTouchDevice || e.pointerType !== 'touch') return;
+  if(!game.started || game.paused || game.phase === 'win') return;
+  if(document.getElementById('keypad-modal').style.display === 'flex') return;
+  if(isUiTarget(e.target)) return;
+
+  const half = window.innerWidth/2;
+  if(e.clientX < half && touchMove.id === null){
+    touchMove.id = e.pointerId;
+    touchMove.active = true;
+    touchMove.baseX = e.clientX;
+    touchMove.baseY = e.clientY;
+    touchMove.vecX = 0; touchMove.vecY = 0; touchMove.mag = 0;
+    showJoystick(e.clientX, e.clientY);
+  } else if(e.clientX >= half && touchLook.id === null){
+    touchLook.id = e.pointerId;
+    touchLook.lastX = e.clientX;
+    touchLook.lastY = e.clientY;
+  }
+}
+function onTouchPointerMove(e){
+  if(e.pointerId === touchMove.id){
+    const dx = e.clientX - touchMove.baseX, dy = e.clientY - touchMove.baseY;
+    const dist = Math.min(JOY_RADIUS, Math.sqrt(dx*dx+dy*dy));
+    const angle = Math.atan2(dy,dx);
+    const kx = Math.cos(angle)*dist, ky = Math.sin(angle)*dist;
+    joystickKnob.style.transform = 'translate('+kx+'px,'+ky+'px)';
+    touchMove.vecX = kx / JOY_RADIUS;
+    touchMove.vecY = ky / JOY_RADIUS;
+    touchMove.mag = dist / JOY_RADIUS;
+  } else if(e.pointerId === touchLook.id){
+    const dx = e.clientX - touchLook.lastX, dy = e.clientY - touchLook.lastY;
+    touchLook.lastX = e.clientX;
+    touchLook.lastY = e.clientY;
+    game.yaw -= dx * touchSensitivity * 2.4;
+    game.pitch -= dy * touchSensitivity * 2.4;
+    game.pitch = Math.max(-1.3, Math.min(1.3, game.pitch));
+  }
+}
+function onTouchPointerUp(e){
+  if(e.pointerId === touchMove.id){
+    touchMove.id = null; touchMove.active = false;
+    touchMove.vecX = 0; touchMove.vecY = 0; touchMove.mag = 0;
+    hideJoystick();
+  } else if(e.pointerId === touchLook.id){
+    touchLook.id = null;
+  }
+}
+window.addEventListener('pointerdown', onTouchPointerDown, {passive:true});
+window.addEventListener('pointermove', onTouchPointerMove, {passive:true});
+window.addEventListener('pointerup', onTouchPointerUp, {passive:true});
+window.addEventListener('pointercancel', onTouchPointerUp, {passive:true});
 
 let mouseSensitivity = 0.0022;
 document.addEventListener('mousemove', (e)=>{
@@ -581,12 +687,14 @@ document.addEventListener('mousemove', (e)=>{
 });
 
 canvas.addEventListener('click', ()=>{
+  if(isTouchDevice) return;
   if(game.started && !game.paused && document.pointerLockElement !== canvas && document.getElementById('keypad-modal').style.display !== 'flex'){
     canvas.requestPointerLock();
   }
 });
 
 document.addEventListener('pointerlockchange', ()=>{
+  if(isTouchDevice) return;
   if(document.pointerLockElement !== canvas && game.started && game.phase !== 'win'){
     const modalOpen = document.getElementById('keypad-modal').style.display === 'flex';
     if(!modalOpen){
@@ -614,14 +722,27 @@ startBtn.addEventListener('click', ()=>{
   document.getElementById('hud').style.display = 'flex';
   document.getElementById('crosshair').style.display = 'block';
   document.getElementById('mode-hint').style.display = 'block';
+  if(isTouchDevice) document.getElementById('view-toggle-btn').style.display = 'block';
   if(!game.started){
     game.started = true;
     game.startTime = performance.now();
     toast('경고: 반응로 오프라인. 표지판의 순서대로 스위치를 누르세요.', 'danger');
   }
   game.paused = false;
-  canvas.requestPointerLock();
+  if(!isTouchDevice) canvas.requestPointerLock();
 });
+
+if(isTouchDevice){
+  document.querySelector('.keys-row').innerHTML =
+    '<span class="key-chip">화면 왼쪽 드래그: 이동</span>' +
+    '<span class="key-chip">화면 오른쪽 드래그: 시점</span>' +
+    '<span class="key-chip">안내 문구 탭: 상호작용</span>' +
+    '<span class="key-chip">좌상단 버튼: 시점전환</span>';
+  document.getElementById('mode-hint').textContent = '1인칭 시점 · 좌상단 버튼으로 전환';
+  const viewBtn = document.getElementById('view-toggle-btn');
+  viewBtn.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); });
+  viewBtn.addEventListener('click', toggleThirdPerson);
+}
 
 document.getElementById('restart-btn').addEventListener('click', ()=>{
   window.location.reload();
@@ -668,12 +789,18 @@ function updateInteractionPrompt(){
     else if(t === 'crate') label = '화물 상자 조사';
     else if(t === 'terminal') label = game.phase === 'power' ? '전원이 필요합니다' : '접근 단말기 사용';
     else if(t === 'launch') label = game.phase === 'unlocked' ? '탈출 포드 발사' : '잠김';
-    promptEl.innerHTML = '<b>[E]</b> ' + label;
+    promptEl.innerHTML = (isTouchDevice ? '<b>[탭]</b> ' : '<b>[E]</b> ') + label;
     promptEl.style.display = 'block';
   } else {
     currentTarget = null;
     promptEl.style.display = 'none';
   }
+}
+
+if(isTouchDevice){
+  promptEl.classList.add('touchable');
+  promptEl.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); });
+  promptEl.addEventListener('click', ()=>{ tryInteract(); });
 }
 
 function tryInteract(){
@@ -835,6 +962,7 @@ function winGame(){
   document.getElementById('hud').style.display = 'none';
   document.getElementById('crosshair').style.display = 'none';
   document.getElementById('mode-hint').style.display = 'none';
+  document.getElementById('view-toggle-btn').style.display = 'none';
   promptEl.style.display = 'none';
   document.getElementById('win-screen').style.display = 'flex';
 }
@@ -888,9 +1016,15 @@ function updateMovement(delta){
   if(keys['KeyS']){ mx -= forward.x; mz -= forward.z; }
   if(keys['KeyD']){ mx += right.x; mz += right.z; }
   if(keys['KeyA']){ mx -= right.x; mz -= right.z; }
+  const keyActive = keys['KeyW']||keys['KeyA']||keys['KeyS']||keys['KeyD'];
+  if(touchMove.active && touchMove.mag > 0.06){
+    mx += forward.x*(-touchMove.vecY) + right.x*(touchMove.vecX);
+    mz += forward.z*(-touchMove.vecY) + right.z*(touchMove.vecX);
+  }
   const len = Math.sqrt(mx*mx+mz*mz);
   if(len > 0){ mx/=len; mz/=len; }
-  const speed = 4.6 * delta;
+  const speedScale = keyActive ? 1 : (touchMove.active ? touchMove.mag : 1);
+  const speed = 4.6 * delta * speedScale;
   let nx = player.x + mx*speed;
   let nz = player.z + mz*speed;
 
