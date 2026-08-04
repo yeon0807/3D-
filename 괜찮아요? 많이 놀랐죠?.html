@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DERELICT — 탈주 프로토콜</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-void:#05070c;
+    --panel:#131a24;
+    --panel-hi:#1e2837;
+    --cyan:#4fe0ff;
+    --cyan-dim:#2a7f96;
+    --amber:#ffb84f;
+    --danger:#ff4d5e;
+    --success:#3ce68a;
+    --text:#d7e6ef;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    width:100%; height:100%; overflow:hidden; background:var(--bg-void);
+    font-family:'Share Tech Mono', monospace; color:var(--text);
+    touch-action:none; -webkit-user-select:none; user-select:none;
+  }
+  #game-canvas{position:fixed; inset:0; display:block; outline:none; touch-action:none;}
+
+  .hud-font{font-family:'Orbitron', sans-serif;}
+
+  /* ---------- overlay screens ---------- */
+  .overlay{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at center, rgba(19,26,36,0.92) 0%, rgba(5,7,12,0.97) 70%);
+    z-index:50; text-align:center; padding:20px;
+  }
+  .panel-box{
+    max-width:560px; width:100%; border:1px solid var(--cyan-dim);
+    background:linear-gradient(180deg, rgba(30,40,55,0.6), rgba(10,14,20,0.7));
+    padding:36px 32px; clip-path:polygon(0 12px,12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
+    box-shadow:0 0 40px rgba(79,224,255,0.08), inset 0 0 60px rgba(79,224,255,0.03);
+  }
+  .eyebrow{
+    font-size:11px; letter-spacing:4px; color:var(--cyan); text-transform:uppercase; margin-bottom:10px;
+    text-shadow:0 0 8px rgba(79,224,255,0.6);
+  }
+  .title-lg{
+    font-size:34px; font-weight:900; letter-spacing:2px; margin-bottom:16px;
+    color:#eaf6fb; text-shadow:0 0 18px rgba(79,224,255,0.35);
+  }
+  .lead{font-size:13px; line-height:1.9; color:#9fb4c2; margin-bottom:22px;}
+  .lead b{color:var(--cyan);}
+  .keys-row{
+    display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-bottom:26px;
+  }
+  .key-chip{
+    border:1px solid #2c3e4d; background:rgba(79,224,255,0.05); padding:8px 12px;
+    font-size:11px; letter-spacing:1px; color:var(--cyan);
+  }
+  .btn{
+    font-family:'Orbitron', sans-serif; font-weight:700; letter-spacing:2px; font-size:14px;
+    background:linear-gradient(180deg, #38d6ff, #1a93b3); color:#04121a; border:none;
+    padding:14px 34px; cursor:pointer; clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+    box-shadow:0 0 20px rgba(79,224,255,0.4); transition:transform .12s, box-shadow .12s;
+  }
+  .btn:hover{transform:translateY(-1px); box-shadow:0 0 28px rgba(79,224,255,0.65);}
+  .btn:active{transform:translateY(0);}
+  .btn.secondary{background:linear-gradient(180deg, #3a4656, #232c38); color:var(--text); box-shadow:none;}
+  #resume-hint{font-size:11px; color:#6c7f8c; margin-top:16px; letter-spacing:1px;}
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:fixed; top:0; left:0; right:0; display:none; justify-content:space-between; align-items:flex-start;
+    padding:20px 26px; z-index:20; pointer-events:none;
+  }
+  #objective{
+    max-width:360px; border-left:2px solid var(--cyan); padding-left:12px;
+  }
+  #objective .lbl{font-size:10px; letter-spacing:3px; color:var(--cyan-dim); margin-bottom:4px;}
+  #objective .txt{font-size:13px; line-height:1.6; color:#dcecf4;}
+  #timer{
+    font-family:'Orbitron', sans-serif; font-size:22px; letter-spacing:2px; color:var(--cyan);
+    text-shadow:0 0 10px rgba(79,224,255,0.5);
+  }
+  #reactor-status{font-size:10px; letter-spacing:2px; margin-top:6px; text-align:right;}
+  #crosshair{
+    position:fixed; top:50%; left:50%; width:6px; height:6px; margin:-3px 0 0 -3px;
+    border:1px solid rgba(255,255,255,0.8); border-radius:50%; z-index:20; display:none;
+    box-shadow:0 0 6px rgba(255,255,255,0.5);
+  }
+  #prompt{
+    position:fixed; bottom:90px; left:50%; transform:translateX(-50%); z-index:20;
+    font-size:12px; letter-spacing:1px; background:rgba(10,16,22,0.8); border:1px solid var(--cyan-dim);
+    padding:9px 16px; display:none; white-space:nowrap;
+  }
+  #prompt b{color:var(--cyan);}
+  #toast{
+    position:fixed; top:100px; left:50%; transform:translateX(-50%); z-index:30;
+    font-size:12px; letter-spacing:1px; background:rgba(10,16,22,0.92); border:1px solid var(--cyan);
+    padding:12px 22px; opacity:0; transition:opacity .4s, transform .4s; pointer-events:none; max-width:80%; text-align:center;
+  }
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(6px);}
+  #toast.danger{border-color:var(--danger); color:#ffd6da;}
+  #toast.success{border-color:var(--success); color:#d4ffe9;}
+
+  /* ---------- touch controls ---------- */
+  #touch-joystick{
+    position:fixed; width:112px; height:112px; margin:-56px 0 0 -56px; border-radius:50%;
+    border:2px solid rgba(79,224,255,0.35); background:rgba(79,224,255,0.05);
+    display:none; z-index:25; pointer-events:none; touch-action:none;
+  }
+  #touch-joystick-knob{
+    position:absolute; top:50%; left:50%; width:46px; height:46px; margin:-23px 0 0 -23px;
+    border-radius:50%; background:rgba(79,224,255,0.32); border:1px solid rgba(79,224,255,0.75);
+    box-shadow:0 0 12px rgba(79,224,255,0.5);
+  }
+  #prompt.touchable{pointer-events:auto; cursor:pointer;}
+
+  /* ---------- keypad modal ---------- */
+  #keypad-modal{
+    position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center;
+    background:rgba(3,5,8,0.72);
+  }
+  #keypad-box{
+    width:300px; border:1px solid var(--cyan-dim); background:linear-gradient(180deg, rgba(24,32,44,0.95), rgba(10,14,20,0.97));
+    padding:24px; clip-path:polygon(0 12px,12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
+    box-shadow:0 0 40px rgba(79,224,255,0.15);
+  }
+  #keypad-title{font-family:'Orbitron',sans-serif; font-size:13px; letter-spacing:3px; color:var(--cyan); margin-bottom:16px; text-align:center;}
+  #keypad-display{
+    display:flex; gap:8px; justify-content:center; margin-bottom:18px;
+  }
+  .digit-box{
+    width:44px; height:52px; border:1px solid var(--cyan-dim); display:flex; align-items:center; justify-content:center;
+    font-family:'Orbitron',sans-serif; font-size:22px; color:var(--cyan);
+    background:rgba(79,224,255,0.04);
+  }
+  .digit-box.filled{box-shadow:0 0 10px rgba(79,224,255,0.4);}
+  #keypad-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:14px;}
+  .kp-btn{
+    font-family:'Orbitron',sans-serif; font-size:16px; padding:12px 0; background:var(--panel-hi);
+    border:1px solid #2c3e4d; color:var(--text); cursor:pointer; transition:background .12s;
+  }
+  .kp-btn:hover{background:rgba(79,224,255,0.15); color:var(--cyan);}
+  #keypad-actions{display:flex; gap:8px;}
+  #keypad-actions .btn{flex:1; padding:11px 0; font-size:12px;}
+  #kp-close{
+    position:absolute; top:10px; right:14px; cursor:pointer; color:#6c7f8c; font-size:16px; background:none; border:none;
+  }
+  #keypad-box{position:relative;}
+
+  /* ---------- win screen ---------- */
+  #win-screen{display:none;}
+  #win-screen .title-lg{color:#eafff3; text-shadow:0 0 22px rgba(60,230,138,0.5);}
+  #win-time{font-family:'Orbitron',sans-serif; font-size:40px; color:var(--success); margin:14px 0; text-shadow:0 0 16px rgba(60,230,138,0.5);}
+
+  @media (max-width:560px){
+    .title-lg{font-size:24px;}
+    #hud{padding:14px 16px;}
+    #timer{font-size:17px;}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game-canvas"></canvas>
+
+<!-- Start / pause overlay -->
+<div class="overlay" id="start-screen">
+  <div class="panel-box">
+    <div class="eyebrow">SYSTEM ALERT · DECK 7 · ENGINEERING BAY</div>
+    <div class="title-lg" id="start-title">DERELICT</div>
+    <div class="lead">
+      선박 <b>ECHO-9</b>의 주 반응로가 정지되었고 탈출 포드는 잠겨 있습니다.<br>
+      전원을 복구하고, 화물칸에서 접근 코드를 찾아, 탈출 포드를 발사해 살아남으세요.
+    </div>
+    <div class="keys-row">
+      <span class="key-chip">W A S D 이동</span>
+      <span class="key-chip">마우스 / 방향키 시점</span>
+      <span class="key-chip">E 상호작용</span>
+      <span class="key-chip">ESC 일시정지</span>
+    </div>
+    <button class="btn" id="start-btn">시스템 진입</button>
+    <div id="resume-hint" style="display:none;">일시정지됨 — 버튼을 눌러 계속하세요</div>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="objective">
+    <div class="lbl hud-font">MISSION LOG</div>
+    <div class="txt" id="objective-text">반응로 전원을 복구하세요.</div>
+  </div>
+  <div style="text-align:right;">
+    <div id="timer" class="hud-font">00:00</div>
+    <div id="reactor-status">REACTOR: <span id="reactor-state" style="color:var(--danger);">OFFLINE</span></div>
+  </div>
+</div>
+<div id="crosshair"></div>
+<div id="prompt"></div>
+<div id="toast"></div>
+<div id="touch-joystick"><div id="touch-joystick-knob"></div></div>
+
+<!-- Keypad modal -->
+<div id="keypad-modal">
+  <div id="keypad-box">
+    <button id="kp-close">✕</button>
+    <div id="keypad-title">탈출 포드 · 접근 코드</div>
+    <div id="keypad-display"></div>
+    <div id="keypad-grid"></div>
+    <div id="keypad-actions">
+      <button class="btn secondary" id="kp-clear">지우기</button>
+      <button class="btn" id="kp-confirm">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- Win screen -->
+<div class="overlay" id="win-screen">
+  <div class="panel-box">
+    <div class="eyebrow">TRANSMISSION · ESCAPE POD LAUNCHED</div>
+    <div class="title-lg">탈출 성공</div>
+    <div class="lead">포드가 ECHO-9을 벗어나 안전 궤도에 진입했습니다.</div>
+    <div id="win-time" class="hud-font">00:00</div>
+    <button class="btn" id="restart-btn">다시 플레이</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   UTIL
+============================================================ */
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+
+function makeCanvasTexture(w,h,drawFn){
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  drawFn(ctx,w,h);
+  const tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/* simple beep feedback */
+let audioCtx = null;
+function beep(freq, dur, type){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + dur);
+  }catch(e){}
+}
+
+/* ============================================================
+   GAME STATE
+============================================================ */
+const SHAPES = ['triangle','square','circle'];
+const SHAPE_COLOR = {triangle:0xff9f43, square:0x4fe0ff, circle:0xff6b9f};
+
+const game = {
+  started:false,
+  paused:false,
+  phase:'power', // power -> code -> unlocked -> win
+  switchOrder: shuffle([0,1,2]),
+  pressIndex:0,
+  code: [randInt(1,9), randInt(1,9), randInt(1,9), randInt(1,9)],
+  inputCode:'',
+  startTime:0,
+  elapsed:0,
+  yaw:0,
+  pitch:0
+};
+
+const player = { x:0, y:0, z:6.5, radius:0.45 };
+
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+const obstacles = []; // {x,z,r}
+
+/* ============================================================
+   THREE SETUP
+============================================================ */
+const canvas = document.getElementById('game-canvas');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05070c);
+scene.fog = new THREE.FogExp2(0x05070c, 0.028);
+
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 200);
+
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* lighting */
+scene.add(new THREE.AmbientLight(0x30404f, 1.1));
+const reactorLight = new THREE.PointLight(0xff5b4d, 3.2, 18, 2);
+reactorLight.position.set(0,2.4,-2);
+scene.add(reactorLight);
+const doorLight = new THREE.PointLight(0x4fe0ff, 1.0, 12);
+doorLight.position.set(10.5, 2.5, 0);
+scene.add(doorLight);
+
+/* room dimensions */
+const ROOM = { w:22, d:16, h:6 }; // x:-11..11 z:-8..8
+const HALFW = ROOM.w/2, HALFD = ROOM.d/2;
+
+function metalMaterial(hex, roughness, metalness){
+  return new THREE.MeshStandardMaterial({color:hex, roughness:roughness!==undefined?roughness:0.7, metalness:metalness!==undefined?metalness:0.4});
+}
+
+/* floor */
+const floorTex = makeCanvasTexture(512,512,(ctx,w,h)=>{
+  ctx.fillStyle = '#12181f'; ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle = 'rgba(79,224,255,0.08)'; ctx.lineWidth = 2;
+  const step = 64;
+  for(let i=0;i<=w;i+=step){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,h); ctx.stroke(); }
+  for(let i=0;i<=h;i+=step){ ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(w,i); ctx.stroke(); }
+});
+floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+floorTex.repeat.set(6,4);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, ROOM.d), new THREE.MeshStandardMaterial({map:floorTex, roughness:0.9, metalness:0.2}));
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+
+/* ceiling */
+const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, ROOM.d), metalMaterial(0x0d1218,0.9,0.3));
+ceiling.rotation.x = Math.PI/2;
+ceiling.position.y = ROOM.h;
+scene.add(ceiling);
+
+/* walls (with a gap on east wall for the pod door) */
+const wallMat = metalMaterial(0x1a2330, 0.75, 0.5);
+function addWall(w,h,x,y,z,ry){
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(w,h), wallMat);
+  wall.position.set(x,y,z);
+  wall.rotation.y = ry;
+  scene.add(wall);
+  return wall;
+}
+addWall(ROOM.w, ROOM.h, 0, ROOM.h/2, -HALFD, 0);          // north
+addWall(ROOM.w, ROOM.h, 0, ROOM.h/2, HALFD, Math.PI);      // south
+addWall(ROOM.d, ROOM.h, -HALFW, ROOM.h/2, 0, Math.PI/2);   // west
+// east wall split around door opening (door at z: -1.6..1.6)
+addWall(ROOM.d/2-1.6, ROOM.h, HALFW, ROOM.h/2, -( (HALFD-1.6)/2 + 1.6 ), -Math.PI/2);
+addWall(ROOM.d/2-1.6, ROOM.h, HALFW, ROOM.h/2, ( (HALFD-1.6)/2 + 1.6 ), -Math.PI/2);
+addWall(3.2, ROOM.h-3.2, HALFW, ROOM.h-1.1, 0, -Math.PI/2); // lintel above door
+
+/* starfield viewport (decorative) on north wall */
+const starTex = makeCanvasTexture(256,256,(ctx,w,h)=>{
+  ctx.fillStyle = '#010308'; ctx.fillRect(0,0,w,h);
+  for(let i=0;i<160;i++){
+    const r = Math.random()*1.6;
+    ctx.fillStyle = 'rgba(200,230,255,'+(0.4+Math.random()*0.6)+')';
+    ctx.beginPath(); ctx.arc(Math.random()*w, Math.random()*h, r, 0, Math.PI*2); ctx.fill();
+  }
+});
+const starPanel = new THREE.Mesh(new THREE.PlaneGeometry(5,3), new THREE.MeshBasicMaterial({map:starTex}));
+starPanel.position.set(-4, 3, -HALFD+0.05);
+scene.add(starPanel);
+const starFrame = new THREE.Mesh(new THREE.BoxGeometry(5.3,3.3,0.15), metalMaterial(0x2c3644,0.6,0.6));
+starFrame.position.set(-4, 3, -HALFD+0.12);
+scene.add(starFrame);
+
+/* ============================================================
+   REACTOR CORE (signature element)
+============================================================ */
+const reactorGroup = new THREE.Group();
+const reactorCore = new THREE.Mesh(
+  new THREE.IcosahedronGeometry(1.1, 1),
+  new THREE.MeshStandardMaterial({color:0xff4d3d, emissive:0xff4d3d, emissiveIntensity:1.4, roughness:0.3, metalness:0.6, wireframe:false})
+);
+reactorCore.position.set(0,2.4,-2);
+reactorGroup.add(reactorCore);
+const reactorRing = new THREE.Mesh(
+  new THREE.TorusGeometry(1.7,0.06,20,96),
+  new THREE.MeshStandardMaterial({color:0x2c3644, metalness:0.8, roughness:0.3})
+);
+reactorRing.position.copy(reactorCore.position);
+reactorRing.rotation.x = Math.PI/2.3;
+reactorGroup.add(reactorRing);
+scene.add(reactorGroup);
+obstacles.push({x:0,z:-2,r:1.6});
+
+function setReactorColor(hex){
+  reactorCore.material.color.setHex(hex);
+  reactorCore.material.emissive.setHex(hex);
+  reactorLight.color.setHex(hex);
+}
+
+/* ============================================================
+   SWITCHES (power puzzle)
+============================================================ */
+const switchMeshes = [];
+const switchPositions = [-3, 0, 3];
+SHAPES.forEach((shape, i)=>{
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.55,0.9,16), metalMaterial(0x232f3d,0.6,0.6));
+  base.position.set(switchPositions[i], 0.45, -0.2);
+  scene.add(base);
+  obstacles.push({x:switchPositions[i], z:-0.2, r:0.65});
+
+  let topGeo;
+  if(shape==='triangle') topGeo = new THREE.ConeGeometry(0.32,0.4,3);
+  else if(shape==='square') topGeo = new THREE.BoxGeometry(0.42,0.4,0.42);
+  else topGeo = new THREE.CylinderGeometry(0.28,0.28,0.4,20);
+  const topMat = new THREE.MeshStandardMaterial({color:0x552222, emissive:0x551111, emissiveIntensity:0.8, roughness:0.4, metalness:0.3});
+  const top = new THREE.Mesh(topGeo, topMat);
+  top.position.set(switchPositions[i], 1.05, -0.2);
+  scene.add(top);
+
+  top.userData = {type:'switch', index:i, shape:shape, solved:false};
+  switchMeshes.push(top);
+});
+
+function setSwitchState(mesh, state){
+  // state: 'off' | 'on' | 'wrong'
+  const colors = {off:[0x552222,0x551111], on:[0x1fae6a,0x1fae6a], wrong:[0xff4d5e,0xff4d5e]};
+  mesh.material.color.setHex(colors[state][0]);
+  mesh.material.emissive.setHex(colors[state][1]);
+  mesh.material.emissiveIntensity = state==='off' ? 0.8 : 1.3;
+}
+
+/* order-hint sign */
+const signTex = makeCanvasTexture(512,320,(ctx,w,h)=>{
+  ctx.fillStyle = '#0b1016'; ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle = 'rgba(79,224,255,0.5)'; ctx.lineWidth = 4; ctx.strokeRect(6,6,w-12,h-12);
+  ctx.fillStyle = '#4fe0ff'; ctx.font = 'bold 26px monospace'; ctx.textAlign='center';
+  ctx.fillText('IGNITION SEQUENCE', w/2, 42);
+  const shapeSlots = [0,1,2].map(orderPos => game.switchOrder.indexOf(orderPos) ); // not used
+  const seq = game.switchOrder; // array of switch-indices in press order
+  const cellW = w/3;
+  seq.forEach((switchIdx, pos)=>{
+    const cx = cellW*pos + cellW/2;
+    const cy = 150;
+    const shape = SHAPES[switchIdx];
+    ctx.strokeStyle = '#'+SHAPE_COLOR[shape].toString(16).padStart(6,'0');
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    if(shape==='triangle'){
+      ctx.moveTo(cx, cy-34); ctx.lineTo(cx-34, cy+26); ctx.lineTo(cx+34, cy+26); ctx.closePath(); ctx.stroke();
+    } else if(shape==='square'){
+      ctx.strokeRect(cx-30, cy-30, 60, 60);
+    } else {
+      ctx.arc(cx, cy, 32, 0, Math.PI*2); ctx.stroke();
+    }
+    ctx.font = 'bold 34px monospace'; ctx.fillStyle = '#eaf6fb';
+    ctx.fillText(String(pos+1), cx, cy+92);
+  });
+  ctx.fillStyle = '#7d93a1'; ctx.font = '13px monospace';
+  ctx.fillText('순서대로 스위치를 눌러 반응로를 재가동하십시오', w/2, h-18);
+});
+const signPanel = new THREE.Mesh(new THREE.PlaneGeometry(3.6,2.2), new THREE.MeshBasicMaterial({map:signTex}));
+signPanel.position.set(4.2, 2.6, -HALFD+0.05);
+scene.add(signPanel);
+const signFrame = new THREE.Mesh(new THREE.BoxGeometry(3.8,2.4,0.1), metalMaterial(0x2c3644,0.6,0.6));
+signFrame.position.set(4.2, 2.6, -HALFD+0.1);
+scene.add(signFrame);
+
+/* ============================================================
+   CRATES (code fragments)
+============================================================ */
+const cratePositions = [
+  {x:-8.5, z:5.8}, {x:8.5, z:5.8}, {x:-8.5, z:-5.6}, {x:8.5, z:-5.6}
+];
+const slotOrderForCrates = shuffle([1,2,3,4]);
+const crateMeshes = [];
+slotOrderForCrates.forEach((slotNum, i)=>{
+  const pos = cratePositions[i];
+  const digit = game.code[slotNum-1];
+  const tex = makeCanvasTexture(256,256,(ctx,w,h)=>{
+    ctx.fillStyle = '#3a2c1f'; ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 10; ctx.strokeRect(5,5,w-10,h-10);
+    ctx.fillStyle = '#ffb84f'; ctx.font = 'bold 20px monospace'; ctx.textAlign='center';
+    ctx.fillText('SLOT '+slotNum, w/2, 60);
+    ctx.fillStyle = '#eaf6fb'; ctx.font = 'bold 100px monospace';
+    ctx.fillText(String(digit), w/2, 170);
+  });
+  const mat = [
+    metalMaterial(0x3a2c1f,0.8,0.1), metalMaterial(0x3a2c1f,0.8,0.1),
+    metalMaterial(0x3a2c1f,0.8,0.1), metalMaterial(0x3a2c1f,0.8,0.1),
+    new THREE.MeshStandardMaterial({map:tex, roughness:0.7}), metalMaterial(0x3a2c1f,0.8,0.1)
+  ];
+  const crate = new THREE.Mesh(new THREE.BoxGeometry(1.1,1.1,1.1), mat);
+  crate.position.set(pos.x, 0.55, pos.z);
+  // rotate so labeled face points toward room center
+  crate.lookAt(0, 0.55, 0);
+  scene.add(crate);
+  obstacles.push({x:pos.x, z:pos.z, r:0.9});
+  crate.userData = {type:'crate', slot:slotNum, digit:digit, discovered:false};
+  crateMeshes.push(crate);
+});
+
+/* ============================================================
+   KEYPAD TERMINAL + POD DOOR
+============================================================ */
+const terminal = new THREE.Mesh(new THREE.BoxGeometry(0.6,1.3,0.6), metalMaterial(0x232f3d,0.6,0.6));
+terminal.position.set(9.2, 0.65, -2.2);
+scene.add(terminal);
+obstacles.push({x:9.2,z:-2.2,r:0.55});
+const termScreenTex = makeCanvasTexture(128,128,(ctx,w,h)=>{
+  ctx.fillStyle = '#0b1016'; ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle = '#4fe0ff'; ctx.lineWidth=4; ctx.strokeRect(6,6,w-12,h-12);
+  ctx.fillStyle = '#4fe0ff'; ctx.font='bold 16px monospace'; ctx.textAlign='center';
+  ctx.fillText('ACCESS', w/2, h/2-4);
+  ctx.fillText('PANEL', w/2, h/2+18);
+});
+const termScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.5), new THREE.MeshBasicMaterial({map:termScreenTex}));
+termScreen.position.set(9.2, 0.95, -1.89);
+scene.add(termScreen);
+terminal.userData = {type:'terminal'};
+
+/* pod door (slides up) */
+const doorMat = metalMaterial(0x2c3d4d,0.5,0.7);
+const podDoor = new THREE.Mesh(new THREE.BoxGeometry(0.25,3.2,3.2), doorMat);
+podDoor.position.set(HALFW-0.1, 1.6, 0);
+scene.add(podDoor);
+
+/* pod room beyond the door */
+const podFloor = new THREE.Mesh(new THREE.PlaneGeometry(4, ROOM.d*0.9), new THREE.MeshStandardMaterial({color:0x0e141c, roughness:0.85}));
+podFloor.rotation.x = -Math.PI/2;
+podFloor.position.set(HALFW+2, 0, 0);
+scene.add(podFloor);
+addWall(4, ROOM.h, HALFW+4, ROOM.h/2, -HALFD*0.45, Math.PI/2);
+addWall(4, ROOM.h, HALFW+4, ROOM.h/2, HALFD*0.45, Math.PI/2);
+addWall(ROOM.d*0.9, ROOM.h, HALFW+4, ROOM.h/2, 0, Math.PI); // far wall of pod bay (approx)
+
+/* escape pod + launch console */
+const podGeo = (typeof THREE.CapsuleGeometry === 'function') ? new THREE.CapsuleGeometry(1,2,4,10) : new THREE.CylinderGeometry(1,1,2,16);
+const podBody = new THREE.Mesh(podGeo, new THREE.MeshStandardMaterial({color:0x3d5567, metalness:0.6, roughness:0.3, emissive:0x0a2530, emissiveIntensity:0.3}));
+podBody.rotation.z = Math.PI/2;
+podBody.position.set(HALFW+3.4, 1.2, 0);
+scene.add(podBody);
+
+const launchConsole = new THREE.Mesh(new THREE.BoxGeometry(0.6,1.1,0.6), metalMaterial(0x232f3d,0.6,0.6));
+launchConsole.position.set(HALFW+1.6, 0.55, 0);
+scene.add(launchConsole);
+obstacles.push({x:HALFW+1.6, z:0, r:0.55});
+launchConsole.userData = {type:'launch'};
+const launchGlow = new THREE.PointLight(0x4fe0ff, 0.6, 4);
+launchGlow.position.set(HALFW+1.6, 1.3, 0);
+scene.add(launchGlow);
+
+/* ============================================================
+   INTERACTABLES REGISTRY
+============================================================ */
+const interactables = [...switchMeshes, ...crateMeshes, terminal, launchConsole];
+
+/* ============================================================
+   INPUT
+============================================================ */
+const keys = {};
+window.addEventListener('keydown', (e)=>{
+  keys[e.code] = true;
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)) e.preventDefault();
+  if(e.code === 'KeyE') tryInteract();
+});
+window.addEventListener('keyup', (e)=>{ keys[e.code] = false; });
+
+/* ---------- touch controls: left = move, right = look ---------- */
+const touchLook = { id:null, lastX:0, lastY:0 };
+const touchMove = { id:null, active:false, baseX:0, baseY:0, vecX:0, vecY:0, mag:0 };
+const touchSensitivity = 0.0032;
+const JOY_RADIUS = 56;
+const joystickEl = document.getElementById('touch-joystick');
+const joystickKnob = document.getElementById('touch-joystick-knob');
+
+function showJoystick(x,y){
+  joystickEl.style.left = x+'px';
+  joystickEl.style.top = y+'px';
+  joystickEl.style.display = 'block';
+  joystickKnob.style.transform = 'translate(0px,0px)';
+}
+function hideJoystick(){ joystickEl.style.display = 'none'; }
+
+function isUiTarget(el){
+  return el.closest && (el.closest('#prompt') || el.closest('.overlay') || el.closest('#keypad-modal') || el.closest('#hud'));
+}
+
+function onTouchPointerDown(e){
+  if(!isTouchDevice || e.pointerType !== 'touch') return;
+  if(!game.started || game.paused || game.phase === 'win') return;
+  if(document.getElementById('keypad-modal').style.display === 'flex') return;
+  if(isUiTarget(e.target)) return;
+
+  const half = window.innerWidth/2;
+  if(e.clientX < half && touchMove.id === null){
+    touchMove.id = e.pointerId;
+    touchMove.active = true;
+    touchMove.baseX = e.clientX;
+    touchMove.baseY = e.clientY;
+    touchMove.vecX = 0; touchMove.vecY = 0; touchMove.mag = 0;
+    showJoystick(e.clientX, e.clientY);
+  } else if(e.clientX >= half && touchLook.id === null){
+    touchLook.id = e.pointerId;
+    touchLook.lastX = e.clientX;
+    touchLook.lastY = e.clientY;
+  }
+}
+function onTouchPointerMove(e){
+  if(e.pointerId === touchMove.id){
+    const dx = e.clientX - touchMove.baseX, dy = e.clientY - touchMove.baseY;
+    const dist = Math.min(JOY_RADIUS, Math.sqrt(dx*dx+dy*dy));
+    const angle = Math.atan2(dy,dx);
+    const kx = Math.cos(angle)*dist, ky = Math.sin(angle)*dist;
+    joystickKnob.style.transform = 'translate('+kx+'px,'+ky+'px)';
+    touchMove.vecX = kx / JOY_RADIUS;
+    touchMove.vecY = ky / JOY_RADIUS;
+    touchMove.mag = dist / JOY_RADIUS;
+  } else if(e.pointerId === touchLook.id){
+    const dx = e.clientX - touchLook.lastX, dy = e.clientY - touchLook.lastY;
+    touchLook.lastX = e.clientX;
+    touchLook.lastY = e.clientY;
+    game.yaw -= dx * touchSensitivity * 2.4;
+    game.pitch -= dy * touchSensitivity * 2.4;
+    game.pitch = Math.max(-1.3, Math.min(1.3, game.pitch));
+  }
+}
+function onTouchPointerUp(e){
+  if(e.pointerId === touchMove.id){
+    touchMove.id = null; touchMove.active = false;
+    touchMove.vecX = 0; touchMove.vecY = 0; touchMove.mag = 0;
+    hideJoystick();
+  } else if(e.pointerId === touchLook.id){
+    touchLook.id = null;
+  }
+}
+window.addEventListener('pointerdown', onTouchPointerDown, {passive:true});
+window.addEventListener('pointermove', onTouchPointerMove, {passive:true});
+window.addEventListener('pointerup', onTouchPointerUp, {passive:true});
+window.addEventListener('pointercancel', onTouchPointerUp, {passive:true});
+
+let mouseSensitivity = 0.0022;
+document.addEventListener('mousemove', (e)=>{
+  if(document.pointerLockElement !== canvas) return;
+  game.yaw -= e.movementX * mouseSensitivity;
+  game.pitch -= e.movementY * mouseSensitivity;
+  game.pitch = Math.max(-1.3, Math.min(1.3, game.pitch));
+});
+
+canvas.addEventListener('click', ()=>{
+  if(isTouchDevice) return;
+  if(game.started && !game.paused && document.pointerLockElement !== canvas && document.getElementById('keypad-modal').style.display !== 'flex'){
+    canvas.requestPointerLock();
+  }
+});
+
+document.addEventListener('pointerlockchange', ()=>{
+  if(isTouchDevice) return;
+  if(document.pointerLockElement !== canvas && game.started && game.phase !== 'win'){
+    const modalOpen = document.getElementById('keypad-modal').style.display === 'flex';
+    if(!modalOpen){
+      game.paused = true;
+      showStartScreen(true);
+    }
+  }
+});
+
+/* start / resume */
+const startScreen = document.getElementById('start-screen');
+const startBtn = document.getElementById('start-btn');
+const resumeHint = document.getElementById('resume-hint');
+const startTitle = document.getElementById('start-title');
+
+function showStartScreen(isPause){
+  startScreen.style.display = 'flex';
+  resumeHint.style.display = isPause ? 'block' : 'none';
+  startTitle.textContent = isPause ? '일시정지' : 'DERELICT';
+  startBtn.textContent = isPause ? '계속하기' : '시스템 진입';
+}
+
+startBtn.addEventListener('click', ()=>{
+  startScreen.style.display = 'none';
+  document.getElementById('hud').style.display = 'flex';
+  document.getElementById('crosshair').style.display = 'block';
+  if(!game.started){
+    game.started = true;
+    game.startTime = performance.now();
+    toast('경고: 반응로 오프라인. 표지판의 순서대로 스위치를 누르세요.', 'danger');
+  }
+  game.paused = false;
+  if(!isTouchDevice) canvas.requestPointerLock();
+});
+
+if(isTouchDevice){
+  document.querySelector('.keys-row').innerHTML =
+    '<span class="key-chip">화면 왼쪽 드래그: 이동</span>' +
+    '<span class="key-chip">화면 오른쪽 드래그: 시점</span>' +
+    '<span class="key-chip">안내 문구 탭: 상호작용</span>';
+}
+
+document.getElementById('restart-btn').addEventListener('click', ()=>{
+  window.location.reload();
+});
+
+/* toast */
+let toastTimer = null;
+function toast(msg, kind){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = kind ? kind : '';
+  requestAnimationFrame(()=> el.classList.add('show'));
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ el.classList.remove('show'); }, 3200);
+}
+
+/* ============================================================
+   INTERACTION LOGIC
+============================================================ */
+const raycaster = new THREE.Raycaster();
+const promptEl = document.getElementById('prompt');
+let currentTarget = null;
+
+function getForwardVector(){
+  return new THREE.Vector3(
+    -Math.sin(game.yaw)*Math.cos(game.pitch),
+    Math.sin(game.pitch),
+    -Math.cos(game.yaw)*Math.cos(game.pitch)
+  ).normalize();
+}
+
+function updateInteractionPrompt(){
+  if(game.phase === 'win'){ promptEl.style.display='none'; currentTarget=null; return; }
+  const origin = new THREE.Vector3(player.x, 1.6, player.z);
+  const dir = getForwardVector();
+  raycaster.set(origin, dir);
+  raycaster.far = 3.4;
+  const hits = raycaster.intersectObjects(interactables, false);
+  if(hits.length > 0){
+    currentTarget = hits[0].object;
+    const t = currentTarget.userData.type;
+    let label = '';
+    if(t === 'switch') label = currentTarget.userData.solved ? '가동됨' : '스위치 작동';
+    else if(t === 'crate') label = '화물 상자 조사';
+    else if(t === 'terminal') label = game.phase === 'power' ? '전원이 필요합니다' : '접근 단말기 사용';
+    else if(t === 'launch') label = game.phase === 'unlocked' ? '탈출 포드 발사' : '잠김';
+    promptEl.innerHTML = (isTouchDevice ? '<b>[탭]</b> ' : '<b>[E]</b> ') + label;
+    promptEl.style.display = 'block';
+  } else {
+    currentTarget = null;
+    promptEl.style.display = 'none';
+  }
+}
+
+if(isTouchDevice){
+  promptEl.classList.add('touchable');
+  promptEl.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); });
+  promptEl.addEventListener('click', ()=>{ tryInteract(); });
+}
+
+function tryInteract(){
+  if(!game.started || game.paused || game.phase === 'win') return;
+  if(document.getElementById('keypad-modal').style.display === 'flex') return;
+  if(!currentTarget) return;
+  const t = currentTarget.userData.type;
+
+  if(t === 'switch') handleSwitchPress(currentTarget);
+  else if(t === 'crate') handleCratePress(currentTarget);
+  else if(t === 'terminal') handleTerminalPress();
+  else if(t === 'launch') handleLaunchPress();
+}
+
+function handleSwitchPress(mesh){
+  if(game.phase !== 'power') { toast('반응로는 이미 가동 중입니다.'); return; }
+  const idx = mesh.userData.index;
+  if(idx === game.switchOrder[game.pressIndex]){
+    mesh.userData.solved = true;
+    setSwitchState(mesh, 'on');
+    beep(520 + game.pressIndex*120, 0.15, 'sine');
+    game.pressIndex++;
+    if(game.pressIndex >= 3){
+      game.phase = 'code';
+      setReactorColor(0xffb84f);
+      document.getElementById('reactor-state').textContent = 'ONLINE';
+      document.getElementById('reactor-state').style.color = 'var(--amber)';
+      document.getElementById('objective-text').textContent = '화물 상자에서 코드 조각(SLOT 1~4)을 찾아 단말기에 입력하세요.';
+      toast('전원 복구 완료. 화물칸에서 접근 코드를 찾으세요.', 'success');
+    }
+  } else {
+    beep(140, 0.3, 'sawtooth');
+    switchMeshes.forEach(m=>{ setSwitchState(m,'wrong'); });
+    toast('오류: 잘못된 순서입니다. 표지판을 다시 확인하세요.', 'danger');
+    setTimeout(()=>{
+      switchMeshes.forEach(m=>{ m.userData.solved=false; setSwitchState(m,'off'); });
+      game.pressIndex = 0;
+    }, 500);
+  }
+}
+
+function handleCratePress(mesh){
+  if(game.phase === 'power'){ toast('전원이 복구되지 않아 상자를 열 수 없습니다.'); return; }
+  mesh.userData.discovered = true;
+  toast('코드 조각 발견 — SLOT ' + mesh.userData.slot + ' : ' + mesh.userData.digit);
+  beep(700, 0.1, 'triangle');
+}
+
+function handleTerminalPress(){
+  if(game.phase === 'power'){ toast('전원이 복구되지 않았습니다.', 'danger'); return; }
+  if(game.phase === 'unlocked'){ toast('이미 잠금이 해제되었습니다.'); return; }
+  openKeypad();
+}
+
+function handleLaunchPress(){
+  if(game.phase !== 'unlocked'){ toast('탈출 포드가 잠겨 있습니다. 접근 코드를 입력하세요.', 'danger'); return; }
+  winGame();
+}
+
+/* ============================================================
+   KEYPAD MODAL
+============================================================ */
+const kpModal = document.getElementById('keypad-modal');
+const kpDisplay = document.getElementById('keypad-display');
+const kpGrid = document.getElementById('keypad-grid');
+
+function renderKeypadDisplay(){
+  kpDisplay.innerHTML = '';
+  for(let i=0;i<4;i++){
+    const box = document.createElement('div');
+    box.className = 'digit-box' + (game.inputCode[i] ? ' filled' : '');
+    box.textContent = game.inputCode[i] || '–';
+    kpDisplay.appendChild(box);
+  }
+}
+
+function buildKeypadGrid(){
+  kpGrid.innerHTML = '';
+  for(let n=1;n<=9;n++){
+    const b = document.createElement('button');
+    b.className = 'kp-btn'; b.textContent = n;
+    b.addEventListener('click', ()=> pushDigit(n));
+    kpGrid.appendChild(b);
+  }
+  const blank = document.createElement('div');
+  kpGrid.appendChild(blank);
+  const zero = document.createElement('button');
+  zero.className = 'kp-btn'; zero.textContent = '0';
+  zero.addEventListener('click', ()=> pushDigit(0));
+  kpGrid.appendChild(zero);
+  const back = document.createElement('button');
+  back.className = 'kp-btn'; back.textContent = '⌫';
+  back.addEventListener('click', ()=>{ game.inputCode = game.inputCode.slice(0,-1); renderKeypadDisplay(); });
+  kpGrid.appendChild(back);
+}
+buildKeypadGrid();
+
+function pushDigit(n){
+  if(game.inputCode.length >= 4) return;
+  game.inputCode += String(n);
+  renderKeypadDisplay();
+}
+
+function openKeypad(){
+  game.inputCode = '';
+  renderKeypadDisplay();
+  kpModal.style.display = 'flex';
+  document.exitPointerLock();
+}
+function closeKeypad(){
+  kpModal.style.display = 'none';
+  if(game.started && !game.paused) canvas.requestPointerLock();
+}
+document.getElementById('kp-close').addEventListener('click', closeKeypad);
+document.getElementById('kp-clear').addEventListener('click', ()=>{ game.inputCode=''; renderKeypadDisplay(); });
+document.getElementById('kp-confirm').addEventListener('click', ()=>{
+  const correct = game.code.join('');
+  if(game.inputCode === correct){
+    game.phase = 'unlocked';
+    beep(880,0.2,'sine');
+    setReactorColor(0x4fe0ff);
+    document.getElementById('reactor-state').textContent = 'UNLOCKED';
+    document.getElementById('reactor-state').style.color = 'var(--cyan)';
+    document.getElementById('objective-text').textContent = '탈출 포드로 이동해 발사 콘솔을 사용하세요.';
+    toast('접근 코드 일치. 탈출 포드 잠금 해제.', 'success');
+    closeKeypad();
+    animateDoorOpen();
+  } else {
+    beep(140,0.35,'sawtooth');
+    kpDisplay.style.animation = 'none';
+    toast('코드가 일치하지 않습니다.', 'danger');
+    game.inputCode = '';
+    renderKeypadDisplay();
+  }
+});
+
+function animateDoorOpen(){
+  const targetY = 4.6;
+  function step(){
+    if(podDoor.position.y < targetY){
+      podDoor.position.y += 0.08;
+      requestAnimationFrame(step);
+    }
+  }
+  step();
+}
+
+/* ============================================================
+   WIN
+============================================================ */
+function winGame(){
+  game.phase = 'win';
+  document.exitPointerLock();
+  const totalMs = performance.now() - game.startTime;
+  const s = Math.floor(totalMs/1000);
+  const mm = String(Math.floor(s/60)).padStart(2,'0');
+  const ss = String(s%60).padStart(2,'0');
+  document.getElementById('win-time').textContent = mm+':'+ss;
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('crosshair').style.display = 'none';
+  promptEl.style.display = 'none';
+  document.getElementById('win-screen').style.display = 'flex';
+}
+
+/* ============================================================
+   MOVEMENT + COLLISION
+============================================================ */
+function resolveCollisions(nx, nz){
+  for(const o of obstacles){
+    const dx = nx - o.x, dz = nz - o.z;
+    const dist = Math.sqrt(dx*dx+dz*dz);
+    const minDist = o.r + player.radius;
+    if(dist < minDist && dist > 0.0001){
+      const push = (minDist - dist);
+      nx += (dx/dist) * push;
+      nz += (dz/dist) * push;
+    }
+  }
+  return [nx,nz];
+}
+
+function updateLook(delta){
+  if(!game.started || game.paused || game.phase === 'win') return;
+  const turnSpeed = 1.8;   // 좌우 회전 속도 (rad/sec)
+  const lookSpeed = 1.4;   // 상하 회전 속도 (rad/sec)
+  if(keys['ArrowLeft'])  game.yaw += turnSpeed * delta;
+  if(keys['ArrowRight']) game.yaw -= turnSpeed * delta;
+  if(keys['ArrowUp'])    game.pitch += lookSpeed * delta;
+  if(keys['ArrowDown'])  game.pitch -= lookSpeed * delta;
+  game.pitch = Math.max(-1.3, Math.min(1.3, game.pitch));
+}
+
+function updateMovement(delta){
+  if(!game.started || game.paused || game.phase === 'win') return;
+  const forward = new THREE.Vector3(-Math.sin(game.yaw), 0, -Math.cos(game.yaw));
+  const right = new THREE.Vector3(Math.cos(game.yaw), 0, -Math.sin(game.yaw));
+  let mx = 0, mz = 0;
+  if(keys['KeyW']){ mx += forward.x; mz += forward.z; }
+  if(keys['KeyS']){ mx -= forward.x; mz -= forward.z; }
+  if(keys['KeyD']){ mx += right.x; mz += right.z; }
+  if(keys['KeyA']){ mx -= right.x; mz -= right.z; }
+  const keyActive = keys['KeyW']||keys['KeyA']||keys['KeyS']||keys['KeyD'];
+  if(touchMove.active && touchMove.mag > 0.06){
+    mx += forward.x*(-touchMove.vecY) + right.x*(touchMove.vecX);
+    mz += forward.z*(-touchMove.vecY) + right.z*(touchMove.vecX);
+  }
+  const len = Math.sqrt(mx*mx+mz*mz);
+  if(len > 0){ mx/=len; mz/=len; }
+  const speedScale = keyActive ? 1 : (touchMove.active ? touchMove.mag : 1);
+  const speed = 4.6 * delta * speedScale;
+  let nx = player.x + mx*speed;
+  let nz = player.z + mz*speed;
+
+  // room bounds; allow extension into pod bay only when unlocked/win
+  const maxX = (game.phase === 'unlocked' || game.phase === 'win') ? HALFW+4.4 : HALFW-0.5;
+  nx = Math.max(-HALFW+0.5, Math.min(maxX, nx));
+  nz = Math.max(-HALFD+0.5, Math.min(HALFD-0.5, nz));
+
+  // keep inside pod bay z-range once past the doorway
+  if(nx > HALFW-0.4){
+    nz = Math.max(-1.5, Math.min(1.5, nz));
+  }
+
+  [nx,nz] = resolveCollisions(nx,nz);
+  player.x = nx; player.z = nz;
+}
+
+/* ============================================================
+   CAMERA UPDATE
+============================================================ */
+function updateCamera(){
+  camera.position.set(player.x, 1.6, player.z);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.set(game.pitch, game.yaw, 0);
+}
+
+/* ============================================================
+   HUD updates
+============================================================ */
+function updateHUD(){
+  if(!game.started || game.phase === 'win') return;
+  const elapsed = Math.floor((performance.now() - game.startTime)/1000);
+  const mm = String(Math.floor(elapsed/60)).padStart(2,'0');
+  const ss = String(elapsed%60).padStart(2,'0');
+  document.getElementById('timer').textContent = mm+':'+ss;
+}
+
+/* ============================================================
+   MAIN LOOP
+============================================================ */
+let lastTime = performance.now();
+function animate(){
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const delta = Math.min(0.05, (now-lastTime)/1000);
+  lastTime = now;
+
+  const t = now/1000;
+  reactorGroup.rotation.y = t*0.3;
+  const pulse = 1 + Math.sin(t*3)*0.04;
+  reactorCore.scale.set(pulse,pulse,pulse);
+  reactorLight.intensity = 3.0 + Math.sin(t*3)*0.4;
+
+  updateLook(delta);
+  updateMovement(delta);
+  updateCamera();
+  updateInteractionPrompt();
+  updateHUD();
+
+  renderer.render(scene, camera);
+}
+
+/* initial state */
+setSwitchState(switchMeshes[0],'off');
+setSwitchState(switchMeshes[1],'off');
+setSwitchState(switchMeshes[2],'off');
+setReactorColor(0xff4d3d);
+
+animate();
+
+})();
+</script>
+</body>
+</html>
